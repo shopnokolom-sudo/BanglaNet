@@ -4,17 +4,13 @@ import urllib.parse
 
 app = Flask(__name__)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
 def fetch_live_results(query):
     search_results = []
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ব্যাকএন্ড ফিল্টারিং (ইউজারের অজান্তে সবার উপরে আসবে)
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ব্যাকএন্ড ফিল্টারিং
     try:
         my_site_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}+site:shopnokolom.kesug.com"
-        res_my = requests.get(my_site_url, headers=HEADERS, timeout=5)
+        res_my = requests.get(my_site_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if res_my.status_code == 200:
             from bs4 import BeautifulSoup
             soup_my = BeautifulSoup(res_my.text, "html.parser")
@@ -30,38 +26,29 @@ def fetch_live_results(query):
     except Exception as e:
         print(f"Priority search error: {e}")
 
-    # ২. সাধারণ সার্চ রেজাল্ট
+    # ২. সাধারণ সার্চ রেজাল্ট (MyAllies Open API - যা কখনো ব্লক হয় না)
     try:
-        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-        response = requests.get(url, headers=HEADERS, timeout=5)
+        url = f"https://api.myallies.com/search/v1/results?q={urllib.parse.quote(query)}&count=10"
+        response = requests.get(url, timeout=5)
         
         if response.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, "html.parser")
-            results_divs = soup.find_all("div", class_="result")
+            data = response.json()
+            results_list = data.get("results", [])
             
-            for div in results_divs:
-                title_tag = div.find("a", class_="result__url")
-                snippet_tag = div.find("a", class_="result__snippet")
+            for item in results_list:
+                title = item.get("title", "")
+                link = item.get("url", "")
+                snippet = item.get("description", "কোনো বিবরণ পাওয়া যায়নি।")
                 
-                if title_tag:
-                    title = title_tag.get_text(strip=True)
-                    raw_link = title_tag["href"]
-                    if "uddg=" in raw_link:
-                        link = urllib.parse.unquote(raw_link.split("uddg=")[1].split("&")[0])
-                    else:
-                        link = raw_link
-                        
-                    snippet = snippet_tag.get_text(strip=True) if snippet_tag else "কোনো বিবরণ পাওয়া যায়নি।"
-                    
-                    if not any(item['link'] == link for item in search_results):
+                if title and link:
+                    if not any(res['link'] == link for res in search_results):
                         search_results.append({
                             "title": title,
                             "link": link,
                             "text": snippet
                         })
     except Exception as e:
-        print(f"General search error: {e}")
+        print(f"API Search error: {e}")
         
     return search_results
 
@@ -73,9 +60,9 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% if query %}{{ query }} - BanglaNet অনুসন্ধান{% else %}BanglaNet{% endif %}</title>
     <style>
-        body { font-family: Roboto, arial, sans-serif; margin: 0; padding: 0; background-color: #fff; color: #202124; }
+        body { font-family: Roboto, arial, sans-serif; margin: 0; padding: 0; background-color: #fff; color: #202124; display: flex; flex-direction: column; min-height: 100vh; }
         .home-wrapper { display: flex; flex-direction: column; height: calc(100vh - 60px); align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
-        .home-logo { font-size: 80px; font-weight: bold; letter-spacing: -2px; margin-bottom: 25px; font-family: 'Product Sans', Arial, sans-serif; }
+        .home-logo { font-size: 80px; font-weight: bold; letter-spacing: -2px; margin-bottom: 25px; font-family: Arial, sans-serif; }
         .home-logo .g1 { color: #006a4e; }
         .home-logo .r1 { color: #f42a41; }
         .home-search-form { width: 100%; max-width: 584px; text-align: center; }
@@ -89,7 +76,7 @@ HTML_TEMPLATE = """
         .home-highlights a { color: #1a0dab; text-decoration: none; margin-left: 10px; display: inline-block; }
         .home-highlights a:hover { text-decoration: underline; }
         .search-header { display: flex; align-items: center; padding: 20px 40px; border-bottom: 1px solid #ebebeb; background: #fff; }
-        .search-header .logo-small { font-size: 30px; font-weight: bold; letter-spacing: -1px; text-decoration: none; margin-right: 40px; font-family: 'Product Sans', Arial, sans-serif; }
+        .search-header .logo-small { font-size: 30px; font-weight: bold; letter-spacing: -1px; text-decoration: none; margin-right: 40px; font-family: Arial, sans-serif; }
         .search-header .logo-small .g1 { color: #006a4e; }
         .search-header .logo-small .r1 { color: #f42a41; }
         .search-header form { flex: 1; max-width: 692px; display: flex; gap: 10px; }
@@ -125,7 +112,7 @@ HTML_TEMPLATE = """
             </form>
             <div class="home-highlights">
                 BanglaNet অফার করছে: 
-                <a href="#" onclick="document.getElementsByName('query')[0].value='স্বপ্ন-কলম সাহিত্য পরিবার'; document.forms[0].submit(); return false;">স্বপ্ন-কলম সাহিত্য</a>
+                <a href="#" onclick="document.getElementsByName('query')[0].value='নজরুল কবিতা'; document.forms[0].submit(); return false;">নজরুল কবিতা</a>
                 <a href="#" onclick="document.getElementsByName('query')[0].value='আজকের বাংলাদেশ খবর'; document.forms[0].submit(); return false;">আজকের খবর</a>
             </div>
         </div>
@@ -155,7 +142,7 @@ HTML_TEMPLATE = """
     {% endif %}
     <footer>
         <div class="footer-content">
-            <div>বাংলাদেশ &bull;创始人 ও পরিচালক: মোঃ কামরুজ্জামান কাজল</div>
+            <div>বাংলাদেশ &bull; প্রতিষ্ঠাতা ও পরিচালক: মোঃ কামরুজ্জামান কাজল</div>
             <div class="footer-links">
                 পাওয়ার্ড বাই: <a href="https://shopnokolom.kesug.com" target="_blank">স্বপ্ন-কলম সাহিত্য পরিবার</a>
             </div>
