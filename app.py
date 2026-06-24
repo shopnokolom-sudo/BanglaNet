@@ -1,56 +1,53 @@
 from flask import Flask, render_template_string, request
 import requests
-from bs4 import BeautifulSoup
 import urllib.parse
 
 app = Flask(__name__)
 
 def fetch_live_results(query):
     search_results = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (গুগল নিউজ/আরএসএস ফিড ব্যবহার করে)
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (সবার উপরে আসার জন্য)
     try:
-        # আপনার সাইটের নির্দিষ্ট কোনো কন্টেন্ট থাকলে তা আগে খোঁজা হবে
-        priority_query = f"{query} site:shopnokolom.kesug.com"
-        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(priority_query)}&hl=bn&gl=BD&ceid=BD:bn"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'xml')
-            items = soup.find_all('item')
-            for item in items[:3]: # সর্বোচ্চ ৩টি রেজাল্ট নেবে আপনার সাইটের
+        # পাবলিক এবং ফ্রি SearXNG ইন্সট্যান্স ব্যবহার করে আপনার সাইটের কন্টেন্ট খোঁজা
+        url_my = f"https://search.ononoki.org/search?q={urllib.parse.quote(query)}+site:shopnokolom.kesug.com&format=json"
+        res_my = requests.get(url_my, headers=headers, timeout=5)
+        if res_my.status_code == 200:
+            raw_data = res_my.json()
+            for item in raw_data.get("results", [])[:3]:
                 search_results.append({
-                    "title": item.title.text if item.title else "স্বপ্ন-কলম সাহিত্য",
-                    "link": item.link.text if item.link else "https://shopnokolom.kesug.com",
-                    "text": "আপনার প্রিয় সাহিত্য প্ল্যাটফর্ম স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত।"
+                    "title": item.get("title", "স্বপ্ন-কলম সাহিত্য"),
+                    "link": item.get("url", "https://shopnokolom.kesug.com"),
+                    "text": item.get("content", "স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত বিস্তারিত লেখা।")
                 })
     except Exception as e:
         print(f"Priority search error: {e}")
 
-    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (গুগল অফিশিয়াল আরএসএস ব্যাকএন্ড - যা কখনো ব্লক হয় না)
+    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (টাইটেল, লিংক এবং সুন্দর বিবরণসহ)
     try:
-        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=bn&gl=BD&ceid=BD:bn"
-        response = requests.get(url, timeout=5)
+        url_gen = f"https://search.ononoki.org/search?q={urllib.parse.quote(query)}&format=json&language=bn"
+        res_gen = requests.get(url_gen, headers=headers, timeout=6)
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'xml')
-            items = soup.find_all('item')
-            
-            for item in items[:15]: # সেরা ১৫টি লাইভ রেজাল্ট দেখাবে
-                title = item.title.text if item.title else ""
-                link = item.link.text if item.link else ""
+        if res_gen.status_code == 200:
+            raw_data = res_gen.json()
+            for item in raw_data.get("results", [])[:12]: # সেরা ১২টি রেজাল্ট দেখাবে
+                title = item.get("title", "")
+                link = item.get("url", "")
+                snippet = item.get("content", "") # এটি সুন্দর বিবরণ/স্নিপেট এনে দেবে
                 
-                # সোর্স বা পত্রিকার নাম টাইটেল থেকে আলাদা করা (যদি থাকে)
-                if " - " in title:
-                    title_clean = title.split(" - ")[0]
-                else:
-                    title_clean = title
-                    
-                if title_clean and link:
+                if not snippet:
+                    snippet = "বিস্তারিত তথ্য দেখতে এবং পড়তে লিংকে ক্লিক করুন।"
+                
+                if title and link:
+                    # ডুপ্লিকেট লিংক বাদ দেওয়া
                     if not any(res['link'] == link for res in search_results):
                         search_results.append({
-                            "title": title_clean,
+                            "title": title,
                             "link": link,
-                            "text": "লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য জানতে লিংকে ক্লিক করুন।"
+                            "text": snippet
                         })
     except Exception as e:
         print(f"General search error: {e}")
