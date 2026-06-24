@@ -1,6 +1,7 @@
 from flask import Flask, render_template_string, request
 import requests
 import urllib.parse
+import re
 
 app = Flask(__name__)
 
@@ -10,44 +11,51 @@ def fetch_live_results(query):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (সবার উপরে আসার জন্য)
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (গুগল আরএসএস ব্যাকএন্ড)
     try:
-        # পাবলিক এবং ফ্রি SearXNG ইন্সট্যান্স ব্যবহার করে আপনার সাইটের কন্টেন্ট খোঁজা
-        url_my = f"https://search.ononoki.org/search?q={urllib.parse.quote(query)}+site:shopnokolom.kesug.com&format=json"
+        priority_query = f"{query} site:shopnokolom.kesug.com"
+        url_my = f"https://news.google.com/rss/search?q={urllib.parse.quote(priority_query)}&hl=bn&gl=BD&ceid=BD:bn"
+        
         res_my = requests.get(url_my, headers=headers, timeout=5)
         if res_my.status_code == 200:
-            raw_data = res_my.json()
-            for item in raw_data.get("results", [])[:3]:
+            # কোনো এক্সটার্নাল পার্সার ছাড়াই দ্রুত ডেটা খোঁজার রেগুলার এক্সপ্রেশন পদ্ধতি
+            titles = re.findall(r'<title>(.*?)</title>', res_my.text)
+            links = re.findall(r'<link>(.*?)</link>', res_my.text)
+            
+            # প্রথম আইটেমটি সাধারণত চ্যানেলের নাম হয়, তাই ২য় আইটেম থেকে শুরু
+            for t, l in zip(titles[1:4], links[1:4]):
+                clean_title = t.split(" - ")[0] if " - " in t else t
                 search_results.append({
-                    "title": item.get("title", "স্বপ্ন-কলম সাহিত্য"),
-                    "link": item.get("url", "https://shopnokolom.kesug.com"),
-                    "text": item.get("content", "স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত বিস্তারিত লেখা।")
+                    "title": clean_title,
+                    "link": l,
+                    "text": "স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত সাহিত্য কন্টেন্ট ও ফিচার।"
                 })
     except Exception as e:
         print(f"Priority search error: {e}")
 
-    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (টাইটেল, লিংক এবং সুন্দর বিবরণসহ)
+    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (গুগল ওপেন আরএসএস ব্যাকএন্ড - যা কখনো ব্লক হয় না)
     try:
-        url_gen = f"https://search.ononoki.org/search?q={urllib.parse.quote(query)}&format=json&language=bn"
+        url_gen = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=bn&gl=BD&ceid=BD:bn"
         res_gen = requests.get(url_gen, headers=headers, timeout=6)
         
         if res_gen.status_code == 200:
-            raw_data = res_gen.json()
-            for item in raw_data.get("results", [])[:12]: # সেরা ১২টি রেজাল্ট দেখাবে
-                title = item.get("title", "")
-                link = item.get("url", "")
-                snippet = item.get("content", "") # এটি সুন্দর বিবরণ/স্নিপেট এনে দেবে
-                
-                if not snippet:
-                    snippet = "বিস্তারিত তথ্য দেখতে এবং পড়তে লিংকে ক্লিক করুন।"
-                
-                if title and link:
-                    # ডুপ্লিকেট লিংক বাদ দেওয়া
-                    if not any(res['link'] == link for res in search_results):
+            titles = re.findall(r'<title>(.*?)</title>', res_gen.text)
+            links = re.findall(r'<link>(.*?)</link>', res_gen.text)
+            
+            for t, l in zip(titles[1:16], links[1:16]): # সেরা ১৫টি লাইভ রেজাল্ট
+                if " - " in t:
+                    title_clean = t.split(" - ")[0]
+                    source = t.split(" - ")[-1]
+                else:
+                    title_clean = t
+                    source = "লাইভ ইন্টারনেট"
+                    
+                if title_clean and l and not l.startswith("https://news.google.com"):
+                    if not any(res['link'] == l for res in search_results):
                         search_results.append({
-                            "title": title,
-                            "link": link,
-                            "text": snippet
+                            "title": title_clean,
+                            "link": l,
+                            "text": f"উৎস: {source}। এই বিষয়ে লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য জানতে ও পড়তে লিংকে ক্লিক করুন।"
                         })
     except Exception as e:
         print(f"General search error: {e}")
@@ -60,7 +68,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if query %}{{ query }} - BanglaNet অনুসন্ধান{% else %}BanglaNet{% endif %}</title>
+    <title>{% if query %}{{ query }} - BanglaNet trophies{% else %}BanglaNet{% endif %}</title>
     <style>
         body { font-family: Roboto, arial, sans-serif; margin: 0; padding: 0; background-color: #fff; color: #202124; display: flex; flex-direction: column; min-height: 100vh; }
         .home-wrapper { display: flex; flex-direction: column; height: calc(100vh - 60px); align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
@@ -109,7 +117,7 @@ HTML_TEMPLATE = """
                     <input type="text" name="query" autocomplete="off" required autofocus>
                 </div>
                 <div class="home-btn-container">
-                    <button type="submit" class="g-btn">BanglaNet অনুসন্ধান</button>
+                    <button type="submit" class="g-btn">BanglaNet Premium অনুসন্ধান</button>
                 </div>
             </form>
             <div class="home-highlights">
@@ -138,7 +146,7 @@ HTML_TEMPLATE = """
                     </div>
                 {% endfor %}
             {% else %}
-                <p style="color: #d32f2f; font-size: 16px; margin-top: 20px;">দুঃখিত, কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
+                <p style="color: #202124; font-size: 16px; margin-top: 20px;">আপনার অনুসন্ধানের জন্য কোনো ফলাফল পাওয়া যায়নি। অনুগ্রহ করে অন্য কিছু লিখে চেষ্টা করুন।</p>
             {% endif %}
         </div>
     {% endif %}
