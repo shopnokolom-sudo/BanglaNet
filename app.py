@@ -1,39 +1,57 @@
 from flask import Flask, render_template_string, request
-from duckduckgo_search import DDGS
+import requests
+from bs4 import BeautifulSoup
+import urllib.parse
 
 app = Flask(__name__)
 
 def fetch_live_results(query):
     search_results = []
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (সবার উপরে আসবে)
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (গুগল নিউজ/আরএসএস ফিড ব্যবহার করে)
     try:
-        with DDGS() as ddgs:
-            # আপনার সাইটের জন্য স্পেসিফিক সার্চ
-            priority_query = f"{query} site:shopnokolom.kesug.com"
-            results = ddgs.text(priority_query, max_results=3)
-            for r in results:
+        # আপনার সাইটের নির্দিষ্ট কোনো কন্টেন্ট থাকলে তা আগে খোঁজা হবে
+        priority_query = f"{query} site:shopnokolom.kesug.com"
+        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(priority_query)}&hl=bn&gl=BD&ceid=BD:bn"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'xml')
+            items = soup.find_all('item')
+            for item in items[:3]: # সর্বোচ্চ ৩টি রেজাল্ট নেবে আপনার সাইটের
                 search_results.append({
-                    "title": r.get('title'),
-                    "link": r.get('href'),
-                    "text": r.get('body')
+                    "title": item.title.text if item.title else "স্বপ্ন-কলম সাহিত্য",
+                    "link": item.link.text if item.link else "https://shopnokolom.kesug.com",
+                    "text": "আপনার প্রিয় সাহিত্য প্ল্যাটফর্ম স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত।"
                 })
     except Exception as e:
         print(f"Priority search error: {e}")
 
-    # ২. সাধারণ ইন্টারনেট সার্চ রেজাল্ট
+    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (গুগল অফিশিয়াল আরএসএস ব্যাকএন্ড - যা কখনো ব্লক হয় না)
     try:
-        with DDGS() as ddgs:
-            results = ddgs.text(query, max_results=10)
-            for r in results:
-                link = r.get('href')
-                # ডুপ্লিকেট লিংক বাদ দেওয়া যেন আপনার সাইট ডাবল না আসে
-                if not any(res['link'] == link for res in search_results):
-                    search_results.append({
-                        "title": r.get('title'),
-                        "link": link,
-                        "text": r.get('body')
-                    })
+        url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=bn&gl=BD&ceid=BD:bn"
+        response = requests.get(url, timeout=5)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'xml')
+            items = soup.find_all('item')
+            
+            for item in items[:15]: # সেরা ১৫টি লাইভ রেজাল্ট দেখাবে
+                title = item.title.text if item.title else ""
+                link = item.link.text if item.link else ""
+                
+                # সোর্স বা পত্রিকার নাম টাইটেল থেকে আলাদা করা (যদি থাকে)
+                if " - " in title:
+                    title_clean = title.split(" - ")[0]
+                else:
+                    title_clean = title
+                    
+                if title_clean and link:
+                    if not any(res['link'] == link for res in search_results):
+                        search_results.append({
+                            "title": title_clean,
+                            "link": link,
+                            "text": "লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য জানতে লিংকে ক্লিক করুন।"
+                        })
     except Exception as e:
         print(f"General search error: {e}")
         
