@@ -1,65 +1,81 @@
 from flask import Flask, render_template_string, request
-import requests
+import urllib.request
 import urllib.parse
+import json
 import re
 
 app = Flask(__name__)
 
 def fetch_live_results(query):
     search_results = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (গুগল আরএসএস ব্যাকএন্ড)
-    try:
-        priority_query = f"{query} site:shopnokolom.kesug.com"
-        url_my = f"https://news.google.com/rss/search?q={urllib.parse.quote(priority_query)}&hl=bn&gl=BD&ceid=BD:bn"
-        
-        res_my = requests.get(url_my, headers=headers, timeout=5)
-        if res_my.status_code == 200:
-            # কোনো এক্সটার্নাল পার্সার ছাড়াই দ্রুত ডেটা খোঁজার রেগুলার এক্সপ্রেশন পদ্ধতি
-            titles = re.findall(r'<title>(.*?)</title>', res_my.text)
-            links = re.findall(r'<link>(.*?)</link>', res_my.text)
-            
-            # প্রথম আইটেমটি সাধারণত চ্যানেলের নাম হয়, তাই ২য় আইটেম থেকে শুরু
-            for t, l in zip(titles[1:4], links[1:4]):
-                clean_title = t.split(" - ")[0] if " - " in t else t
-                search_results.append({
-                    "title": clean_title,
-                    "link": l,
-                    "text": "স্বপ্ন-কলম সাহিত্য পরিবার থেকে প্রকাশিত সাহিত্য কন্টেন্ট ও ফিচার।"
-                })
-    except Exception as e:
-        print(f"Priority search error: {e}")
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (স্বপ্ন-কলম সাহিত্য পরিবার)
+    if "স্বপ্ন" in query or "সাহিত্য" in query or "কাজল" in query or "shopnokolom" in query:
+        search_results.append({
+            "title": "স্বপ্ন-কলম সাহিত্য পরিবার - অফিসিয়াল ওয়েবসাইট",
+            "link": "https://shopnokolom.kesug.com",
+            "text": "মোঃ কামরুজ্জামান কাজল কর্তৃক প্রতিষ্ঠিত বাংলাদেশের একটি অন্যতম জনপ্রিয় সাহিত্য প্ল্যাটফর্ম। এখানে গল্প, কবিতা, উপন্যাস এবং সাহিত্য চর্চা করা হয়।"
+        })
 
-    # ২. সাধারণ লাইভ ইন্টারনেট সার্চ (গুগল ওপেন আরএসএস ব্যাকএন্ড - যা কখনো ব্লক হয় না)
+    # ২. সাধারণ লাইভ ইন্টারনেট অনুসন্ধান (সার্ভার ফ্রেন্ডলি উইকিপিডিয়া ও ওপেন এপিআই ব্যাকএন্ড)
     try:
-        url_gen = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=bn&gl=BD&ceid=BD:bn"
-        res_gen = requests.get(url_gen, headers=headers, timeout=6)
+        # উইকিপিডিয়া ওপেন সার্চ ব্যাকএন্ড (যা কখনো ব্লক হয় না এবং টাইটেল, লিংক, ডেসক্রিপশন একসাথে দেয়)
+        wiki_url = f"https://bn.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(query)}&limit=10&namespace=0&format=json"
         
-        if res_gen.status_code == 200:
-            titles = re.findall(r'<title>(.*?)</title>', res_gen.text)
-            links = re.findall(r'<link>(.*?)</link>', res_gen.text)
+        req = urllib.request.Request(
+            wiki_url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
             
-            for t, l in zip(titles[1:16], links[1:16]): # সেরা ১৫টি লাইভ রেজাল্ট
-                if " - " in t:
-                    title_clean = t.split(" - ")[0]
-                    source = t.split(" - ")[-1]
-                else:
-                    title_clean = t
-                    source = "লাইভ ইন্টারনেট"
-                    
-                if title_clean and l and not l.startswith("https://news.google.com"):
+            # উইকিপিডিয়া ওপেনসার্চ ফরম্যাট: [query, [titles], [descriptions], [links]]
+            if len(data) >= 4:
+                titles = data[1]
+                descriptions = data[2]
+                links = data[3]
+                
+                for t, d, l in zip(titles, descriptions, links):
                     if not any(res['link'] == l for res in search_results):
                         search_results.append({
-                            "title": title_clean,
+                            "title": t,
                             "link": l,
-                            "text": f"উৎস: {source}। এই বিষয়ে লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য জানতে ও পড়তে লিংকে ক্লিক করুন।"
+                            "text": d if d else "এই বিষয়ে বিস্তারিত তথ্য জানতে ও পড়তে লিংকে ক্লিক করুন।"
                         })
     except Exception as e:
-        print(f"General search error: {e}")
-        
+        print(f"Primary search error: {e}")
+
+    # ৩. ব্যাকআপ গ্লোবাল ওয়েব সার্চ (DuckDuckGo HTML লাইট ব্যাকএন্ড)
+    if len(search_results) < 3:
+        try:
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            req = urllib.request.Request(
+                ddg_url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                html = response.read().decode('utf-8')
+                
+                # রেগুলার এক্সপ্রেশন দিয়ে টাইটেল, লিংক ও বিবরণ আলাদা করা
+                links = re.findall(r'class="result__url"[^>]*href="([^"]+)"', html)
+                titles = re.findall(r'class="result__snippet"[^>]*>([^<]+)<', html)
+                
+                for i in range(min(len(links), 8)):
+                    actual_link = links[i]
+                    # ডাকডাকগো রিডাইরেক্ট লিংক পরিষ্কার করা
+                    if "uddg=" in actual_link:
+                        actual_link = urllib.parse.unquote(actual_link.split("uddg=")[1].split("&")[0])
+                        
+                    if not any(res['link'] == actual_link for res in search_results):
+                        search_results.append({
+                            "title": query.capitalize() + " - বিস্তারিত অনুসন্ধান",
+                            "link": actual_link,
+                            "text": titles[i].strip() if i < len(titles) else "লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য।"
+                        })
+        except Exception as e:
+            print(f"Backup search error: {e}")
+            
     return search_results
 
 HTML_TEMPLATE = """
@@ -68,7 +84,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if query %}{{ query }} - BanglaNet trophies{% else %}BanglaNet{% endif %}</title>
+    <title>{% if query %}{{ query }} - BanglaNet 🔍{% else %}BanglaNet{% endif %}</title>
     <style>
         body { font-family: Roboto, arial, sans-serif; margin: 0; padding: 0; background-color: #fff; color: #202124; display: flex; flex-direction: column; min-height: 100vh; }
         .home-wrapper { display: flex; flex-direction: column; height: calc(100vh - 60px); align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
@@ -117,13 +133,13 @@ HTML_TEMPLATE = """
                     <input type="text" name="query" autocomplete="off" required autofocus>
                 </div>
                 <div class="home-btn-container">
-                    <button type="submit" class="g-btn">BanglaNet Premium অনুসন্ধান</button>
+                    <button type="submit" class="g-btn">BanglaNet অনুসন্ধান</button>
                 </div>
             </form>
             <div class="home-highlights">
                 BanglaNet অফার করছে: 
                 <a href="#" onclick="document.getElementsByName('query')[0].value='স্বপ্ন-কলম সাহিত্য পরিবার'; document.forms[0].submit(); return false;">স্বপ্ন-কলম সাহিত্য</a>
-                <a href="#" onclick="document.getElementsByName('query')[0].value='আজকের বাংলাদেশ খবর'; document.forms[0].submit(); return false;">আজকের খবর</a>
+                <a href="#" onclick="document.getElementsByName('query')[0].value='বাংলাদেশ'; document.forms[0].submit(); return false;">বাংলাদেশ</a>
             </div>
         </div>
     {% else %}
@@ -146,7 +162,7 @@ HTML_TEMPLATE = """
                     </div>
                 {% endfor %}
             {% else %}
-                <p style="color: #202124; font-size: 16px; margin-top: 20px;">আপনার অনুসন্ধানের জন্য কোনো ফলাফল পাওয়া যায়নি। অনুগ্রহ করে অন্য কিছু লিখে চেষ্টা করুন।</p>
+                <p style="color: #202124; font-size: 16px; margin-top: 20px;">দুঃখিত, কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
             {% endif %}
         </div>
     {% endif %}
