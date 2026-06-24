@@ -11,7 +11,7 @@ HEADERS = {
 def fetch_live_results(query):
     search_results = []
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ব্যাকএন্ড ফিল্টারিং
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ব্যাকএন্ড ফিল্টারিং (ইউজারের অজান্তে সবার উপরে আসবে)
     try:
         my_site_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}+site:shopnokolom.kesug.com"
         res_my = requests.get(my_site_url, headers=HEADERS, timeout=5)
@@ -155,7 +155,7 @@ HTML_TEMPLATE = """
     {% endif %}
     <footer>
         <div class="footer-content">
-            <div>বাংলাদেশ &bull; প্রতিষ্ঠাতা ও পরিচালক: মোঃ কামরুজ্জামান কাজল</div>
+            <div>বাংলাদেশ &bull;创始人 ও পরিচালক: মোঃ কামরুজ্জামান কাজল</div>
             <div class="footer-links">
                 পাওয়ার্ড বাই: <a href="https://shopnokolom.kesug.com" target="_blank">স্বপ্ন-কলম সাহিত্য পরিবার</a>
             </div>
@@ -164,6 +164,17 @@ HTML_TEMPLATE = """
 </body>
 </html>
 """
+
+@app.route('/', methods=['GET', 'POST'])
+def home():
+    query = ""
+    search_results = []
+    
+    if request.method == 'POST':
+        query = request.form['query']
+        search_results = fetch_live_results(query)
+                
+    return render_template_string(HTML_TEMPLATE, query=query, results=search_results)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
