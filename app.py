@@ -2,80 +2,63 @@ from flask import Flask, render_template_string, request
 import urllib.request
 import urllib.parse
 import json
-import re
 
 app = Flask(__name__)
 
 def fetch_live_results(query):
     search_results = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     
     # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (স্বপ্ন-কলম সাহিত্য পরিবার)
-    if "স্বপ্ন" in query or "সাহিত্য" in query or "কাজল" in query or "shopnokolom" in query:
+    if any(word in query for word in ["স্বপ্ন", "সাহিত্য", "কাজল", "shopnokolom"]):
         search_results.append({
             "title": "স্বপ্ন-কলম সাহিত্য পরিবার - অফিসিয়াল ওয়েবসাইট",
             "link": "https://shopnokolom.kesug.com",
             "text": "মোঃ কামরুজ্জামান কাজল কর্তৃক প্রতিষ্ঠিত বাংলাদেশের একটি অন্যতম জনপ্রিয় সাহিত্য প্ল্যাটফর্ম। এখানে গল্প, কবিতা, উপন্যাস এবং সাহিত্য চর্চা করা হয়।"
         })
 
-    # ২. সাধারণ লাইভ ইন্টারনেট অনুসন্ধান (সার্ভার ফ্রেন্ডলি উইকিপিডিয়া ও ওপেন এপিআই ব্যাকএন্ড)
+    # ২. ডাকডাকগো অফিশিয়াল লাইভ ওয়েব সার্চ ব্যাকঅ্যান্ড (যা কখনো ব্লক হয় না এবং আসল ওয়েবসাইটের তথ্য দেয়)
     try:
-        # উইকিপিডিয়া ওপেন সার্চ ব্যাকএন্ড (যা কখনো ব্লক হয় না এবং টাইটেল, লিংক, ডেসক্রিপশন একসাথে দেয়)
-        wiki_url = f"https://bn.wikipedia.org/w/api.php?action=opensearch&search={urllib.parse.quote(query)}&limit=10&namespace=0&format=json"
+        # DuckDuckGo API (সার্ভার ফ্রেন্ডলি এবং ডেসক্রিপশনসহ লাইভ রেজাল্ট দেয়)
+        ddg_api_url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(query)}&format=json&no_html=1&skip_disambig=1"
+        req = urllib.request.Request(ddg_api_url, headers=headers)
         
-        req = urllib.request.Request(
-            wiki_url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
-        
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=6) as response:
             data = json.loads(response.read().decode('utf-8'))
             
-            # উইকিপিডিয়া ওপেনসার্চ ফরম্যাট: [query, [titles], [descriptions], [links]]
-            if len(data) >= 4:
-                titles = data[1]
-                descriptions = data[2]
-                links = data[3]
-                
-                for t, d, l in zip(titles, descriptions, links):
-                    if not any(res['link'] == l for res in search_results):
+            # প্রধান রেজাল্ট (Abstract)
+            if data.get("AbstractText") and data.get("AbstractURL"):
+                search_results.append({
+                    "title": data.get("Heading", query),
+                    "link": data.get("AbstractURL"),
+                    "text": data.get("AbstractText")
+                })
+            
+            # রিলেটেড লাইভ ওয়েব রেজাল্টস (Related Topics)
+            topics = data.get("RelatedTopics", [])
+            for topic in topics[:12]: # সেরা ১২টি লাইভ ওয়েবসাইট রেজাল্ট
+                if "FirstURL" in topic and "Text" in topic:
+                    link = topic["FirstURL"]
+                    text_content = topic["Text"]
+                    
+                    # টেক্সট থেকে টাইটেল এবং ডেসক্রিপশন আলাদা করা
+                    title = query.capitalize()
+                    if " -" in text_content:
+                        title = text_content.split(" -")[0]
+                    elif "," in text_content:
+                        title = text_content.split(",")[0]
+                        
+                    if not any(res['link'] == link for res in search_results):
                         search_results.append({
-                            "title": t,
-                            "link": l,
-                            "text": d if d else "এই বিষয়ে বিস্তারিত তথ্য জানতে ও পড়তে লিংকে ক্লিক করুন।"
+                            "title": title,
+                            "link": link,
+                            "text": text_content
                         })
     except Exception as e:
-        print(f"Primary search error: {e}")
-
-    # ৩. ব্যাকআপ গ্লোবাল ওয়েব সার্চ (DuckDuckGo HTML লাইট ব্যাকএন্ড)
-    if len(search_results) < 3:
-        try:
-            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-            req = urllib.request.Request(
-                ddg_url, 
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                html = response.read().decode('utf-8')
-                
-                # রেগুলার এক্সপ্রেশন দিয়ে টাইটেল, লিংক ও বিবরণ আলাদা করা
-                links = re.findall(r'class="result__url"[^>]*href="([^"]+)"', html)
-                titles = re.findall(r'class="result__snippet"[^>]*>([^<]+)<', html)
-                
-                for i in range(min(len(links), 8)):
-                    actual_link = links[i]
-                    # ডাকডাকগো রিডাইরেক্ট লিংক পরিষ্কার করা
-                    if "uddg=" in actual_link:
-                        actual_link = urllib.parse.unquote(actual_link.split("uddg=")[1].split("&")[0])
-                        
-                    if not any(res['link'] == actual_link for res in search_results):
-                        search_results.append({
-                            "title": query.capitalize() + " - বিস্তারিত অনুসন্ধান",
-                            "link": actual_link,
-                            "text": titles[i].strip() if i < len(titles) else "লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য।"
-                        })
-        except Exception as e:
-            print(f"Backup search error: {e}")
-            
+        print(f"Live Web Search Error: {e}")
+        
     return search_results
 
 HTML_TEMPLATE = """
@@ -139,7 +122,7 @@ HTML_TEMPLATE = """
             <div class="home-highlights">
                 BanglaNet অফার করছে: 
                 <a href="#" onclick="document.getElementsByName('query')[0].value='স্বপ্ন-কলম সাহিত্য পরিবার'; document.forms[0].submit(); return false;">স্বপ্ন-কলম সাহিত্য</a>
-                <a href="#" onclick="document.getElementsByName('query')[0].value='বাংলাদেশ'; document.forms[0].submit(); return false;">বাংলাদেশ</a>
+                <a href="#" onclick="document.getElementsByName('query')[0].value='আজকের বাংলাদেশ খবর'; document.forms[0].submit(); return false;">আজকের খবর</a>
             </div>
         </div>
     {% else %}
@@ -162,7 +145,7 @@ HTML_TEMPLATE = """
                     </div>
                 {% endfor %}
             {% else %}
-                <p style="color: #202124; font-size: 16px; margin-top: 20px;">দুঃখিত, কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
+                <p style="color: #202124; font-size: 16px; margin-top: 20px;">দুঃখিত, এই মুহূর্তে কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
             {% endif %}
         </div>
     {% endif %}
