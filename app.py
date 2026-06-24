@@ -1,54 +1,41 @@
 from flask import Flask, render_template_string, request
-import requests
-import urllib.parse
+from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
 def fetch_live_results(query):
     search_results = []
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ব্যাকএন্ড ফিল্টারিং
+    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (সবার উপরে আসবে)
     try:
-        my_site_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}+site:shopnokolom.kesug.com"
-        res_my = requests.get(my_site_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res_my.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup_my = BeautifulSoup(res_my.text, "html.parser")
-            for rel in soup_my.find_all("div", class_="result")[:3]:
-                t_tag = rel.find("a", class_="result__url")
-                s_tag = rel.find("a", class_="result__snippet")
-                if t_tag:
-                    search_results.append({
-                        "title": t_tag.get_text(strip=True),
-                        "link": "https://" + t_tag["href"].split("//")[-1].strip(),
-                        "text": s_tag.get_text(strip=True) if s_tag else "স্বপ্ন-কলম সাহিত্য পরিবার।"
-                    })
+        with DDGS() as ddgs:
+            # আপনার সাইটের জন্য স্পেসিফিক সার্চ
+            priority_query = f"{query} site:shopnokolom.kesug.com"
+            results = ddgs.text(priority_query, max_results=3)
+            for r in results:
+                search_results.append({
+                    "title": r.get('title'),
+                    "link": r.get('href'),
+                    "text": r.get('body')
+                })
     except Exception as e:
         print(f"Priority search error: {e}")
 
-    # ২. সাধারণ সার্চ রেজাল্ট (MyAllies Open API - যা কখনো ব্লক হয় না)
+    # ২. সাধারণ ইন্টারনেট সার্চ রেজাল্ট
     try:
-        url = f"https://api.myallies.com/search/v1/results?q={urllib.parse.quote(query)}&count=10"
-        response = requests.get(url, timeout=5)
-        
-        if response.status_code == 200:
-            data = response.json()
-            results_list = data.get("results", [])
-            
-            for item in results_list:
-                title = item.get("title", "")
-                link = item.get("url", "")
-                snippet = item.get("description", "কোনো বিবরণ পাওয়া যায়নি।")
-                
-                if title and link:
-                    if not any(res['link'] == link for res in search_results):
-                        search_results.append({
-                            "title": title,
-                            "link": link,
-                            "text": snippet
-                        })
+        with DDGS() as ddgs:
+            results = ddgs.text(query, max_results=10)
+            for r in results:
+                link = r.get('href')
+                # ডুপ্লিকেট লিংক বাদ দেওয়া যেন আপনার সাইট ডাবল না আসে
+                if not any(res['link'] == link for res in search_results):
+                    search_results.append({
+                        "title": r.get('title'),
+                        "link": link,
+                        "text": r.get('body')
+                    })
     except Exception as e:
-        print(f"API Search error: {e}")
+        print(f"General search error: {e}")
         
     return search_results
 
@@ -112,7 +99,7 @@ HTML_TEMPLATE = """
             </form>
             <div class="home-highlights">
                 BanglaNet অফার করছে: 
-                <a href="#" onclick="document.getElementsByName('query')[0].value='নজরুল কবিতা'; document.forms[0].submit(); return false;">নজরুল কবিতা</a>
+                <a href="#" onclick="document.getElementsByName('query')[0].value='স্বপ্ন-কলম সাহিত্য পরিবার'; document.forms[0].submit(); return false;">স্বপ্ন-কলম সাহিত্য</a>
                 <a href="#" onclick="document.getElementsByName('query')[0].value='আজকের বাংলাদেশ খবর'; document.forms[0].submit(); return false;">আজকের খবর</a>
             </div>
         </div>
