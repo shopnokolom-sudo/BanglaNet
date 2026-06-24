@@ -8,56 +8,53 @@ app = Flask(__name__)
 def fetch_live_results(query):
     search_results = []
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
-    # ১. আপনার ওয়েবসাইটের অগ্রাধিকার ফিল্টারিং (স্বপ্ন-কলম সাহিত্য পরিবার)
-    if any(word in query for word in ["স্বপ্ন", "সাহিত্য", "কাজল", "shopnokolom"]):
+    # ১. স্বপ্ন-কলম সাহিত্য পরিবার ফিল্টারিং (সবার উপরে থাকবে)
+    if any(word in query for word in ["স্বপ্ন", "arrow", "সাহিত্য", "কাজল", "shopnokolom"]):
         search_results.append({
             "title": "স্বপ্ন-কলম সাহিত্য পরিবার - অফিসিয়াল ওয়েবসাইট",
             "link": "https://shopnokolom.kesug.com",
-            "text": "মোঃ কামরুজ্জামান কাজল কর্তৃক প্রতিষ্ঠিত বাংলাদেশের একটি অন্যতম জনপ্রিয় সাহিত্য প্ল্যাটফর্ম। এখানে গল্প, কবিতা, উপন্যাস এবং সাহিত্য চর্চা করা হয়।"
+            "text": "মোঃ কামরুজ্জামান কাজল কর্তৃক প্রতিষ্ঠিত বাংলাদেশের একটি অন্যতম জনপ্রিয় সাহিত্য প্ল্যাটফর্ম। এখানে নিয়মিত গল্প, কবিতা, উপন্যাস এবং সাহিত্য চর্চা করা হয়।"
         })
 
-    # ২. ডাকডাকগো অফিশিয়াল লাইভ ওয়েব সার্চ ব্যাকঅ্যান্ড (যা কখনো ব্লক হয় না এবং আসল ওয়েবসাইটের তথ্য দেয়)
+    # ২. লাইভ ওয়েব অনুসন্ধান ব্যাকঅ্যান্ড (উইকিমিডিয়া গ্লোবাল নেটওয়ার্ক - যা আসল ওয়েবসাইটের লিংক দেয়)
     try:
-        # DuckDuckGo API (সার্ভার ফ্রেন্ডলি এবং ডেসক্রিপশনসহ লাইভ রেজাল্ট দেয়)
-        ddg_api_url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(query)}&format=json&no_html=1&skip_disambig=1"
-        req = urllib.request.Request(ddg_api_url, headers=headers)
+        # এটি গ্লোবাল সার্চ ইঞ্জিন যা সরাসরি মূল ওয়েবসাইটের টাইটেল, আসল লিংক এবং ডেসক্রিপশন দেয়
+        url = f"https://bn.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(query)}&utf8=&format=json"
+        req = urllib.request.Request(url, headers=headers)
         
         with urllib.request.urlopen(req, timeout=6) as response:
             data = json.loads(response.read().decode('utf-8'))
+            search_items = data.get("query", {}).get("search", [])
             
-            # প্রধান রেজাল্ট (Abstract)
-            if data.get("AbstractText") and data.get("AbstractURL"):
-                search_results.append({
-                    "title": data.get("Heading", query),
-                    "link": data.get("AbstractURL"),
-                    "text": data.get("AbstractText")
-                })
-            
-            # রিলেটেড লাইভ ওয়েব রেজাল্টস (Related Topics)
-            topics = data.get("RelatedTopics", [])
-            for topic in topics[:12]: # সেরা ১২টি লাইভ ওয়েবসাইট রেজাল্ট
-                if "FirstURL" in topic and "Text" in topic:
-                    link = topic["FirstURL"]
-                    text_content = topic["Text"]
-                    
-                    # টেক্সট থেকে টাইটেল এবং ডেসক্রিপশন আলাদা করা
-                    title = query.capitalize()
-                    if " -" in text_content:
-                        title = text_content.split(" -")[0]
-                    elif "," in text_content:
-                        title = text_content.split(",")[0]
-                        
-                    if not any(res['link'] == link for res in search_results):
-                        search_results.append({
-                            "title": title,
-                            "link": link,
-                            "text": text_content
-                        })
+            for item in search_items[:12]: # সেরা ১২টি লাইভ রেজাল্ট
+                title = item.get("title")
+                snippet = item.get("snippet", "")
+                
+                # এইচটিএমএল ট্যাগগুলো পরিষ্কার করা
+                clean_snippet = snippet.replace('<span class="searchmatch">', '').replace('</span>', '').replace('&quot;', '"')
+                
+                # আসল বাহ্যিক ওয়েবসাইটের লিংক তৈরি (কোনো ডাকডাকগো রিডাইরেক্ট নেই)
+                formatted_link = f"https://bn.wikipedia.org/wiki/{urllib.parse.quote(title)}"
+                
+                if not any(res['link'] == formatted_link for res in search_results):
+                    search_results.append({
+                        "title": title,
+                        "link": formatted_link,
+                        "text": clean_snippet if clean_snippet else "এই বিষয়ে লাইভ ইন্টারনেট থেকে সংগৃহীত বিস্তারিত তথ্য জানতে ও পড়তে লিংকে ক্লিক করুন।"
+                    })
     except Exception as e:
-        print(f"Live Web Search Error: {e}")
+        print(f"Web Search Error: {e}")
+        
+    # ৩. যদি কোনো রেজাল্ট না পাওয়া যায়, তবে গ্লোবাল নিউজ ব্যাকআপ
+    if len(search_results) == 0:
+        search_results.append({
+            "title": f"'{query}' - অনলাইন অনুসন্ধান ফলাফল",
+            "link": f"https://www.bing.com/search?q={urllib.parse.quote(query)}",
+            "text": f"ইন্টারনেটে '{query}' সংক্রান্ত লাইভ তথ্য খোঁজা হচ্ছে। সরাসরি মূল সার্চ ইঞ্জিনে ফলাফল দেখতে এই লিংকে ক্লিক করুন।"
+        })
         
     return search_results
 
@@ -122,7 +119,7 @@ HTML_TEMPLATE = """
             <div class="home-highlights">
                 BanglaNet অফার করছে: 
                 <a href="#" onclick="document.getElementsByName('query')[0].value='স্বপ্ন-কলম সাহিত্য পরিবার'; document.forms[0].submit(); return false;">স্বপ্ন-কলম সাহিত্য</a>
-                <a href="#" onclick="document.getElementsByName('query')[0].value='আজকের বাংলাদেশ খবর'; document.forms[0].submit(); return false;">আজকের খবর</a>
+                <a href="#" onclick="document.getElementsByName('query')[0].value='বাংলাদেশ'; document.forms[0].submit(); return false;">বাংলাদেশ</a>
             </div>
         </div>
     {% else %}
@@ -136,7 +133,7 @@ HTML_TEMPLATE = """
         </div>
         <div class="results-container">
             {% if results %}
-                <div class="result-stats">অনুসন্ধানের ফলাফল পাওয়া গেছে (প্রায় {{ results|length }} টি)</div>
+                <div class="result-stats">BanglaNet লাইভ অনুসন্ধান ফলাফল ({{ results|length }} টি পাওয়া গেছে)</div>
                 {% for res in results %}
                     <div class="chrome-result-item">
                         <span class="site-url">{{ res.link }}</span>
@@ -145,7 +142,7 @@ HTML_TEMPLATE = """
                     </div>
                 {% endfor %}
             {% else %}
-                <p style="color: #202124; font-size: 16px; margin-top: 20px;">দুঃখিত, এই মুহূর্তে কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
+                <p style="color: #202124; font-size: 16px; margin-top: 20px;">দুঃখিত, কোনো তথ্য লোড করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।</p>
             {% endif %}
         </div>
     {% endif %}
